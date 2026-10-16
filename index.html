@@ -604,6 +604,7 @@
       let activeCalls = []; // Array of active calls on MATRIZ
       let activeCall = null; // Active call reference on PRACA
       let localStream = null;
+      let bufferMonitorInterval = null; // Timer para monitorar o delay da praça
 
       // Audio Context & Meter Nodes
       let audioCtx = null;
@@ -700,6 +701,11 @@
           const el = document.getElementById(id);
           if (el) el.disabled = (role === "PRACA");
         });
+
+        if (bufferMonitorInterval) {
+          clearInterval(bufferMonitorInterval);
+          bufferMonitorInterval = null;
+        }
 
         if (peer) {
           peer.destroy();
@@ -1075,6 +1081,10 @@
 
       function connectPracaToMatriz(matrizStationId) {
         if (peer) {
+          if (bufferMonitorInterval) {
+            clearInterval(bufferMonitorInterval);
+            bufferMonitorInterval = null;
+          }
           peer.destroy();
           peer = null;
           updateStatusUI("DESCONECTADO", "red");
@@ -1122,6 +1132,20 @@
             remoteAudio.srcObject = remoteStream;
             remoteAudio.play().catch(() => {});
 
+            // MONITOR DE LATÊNCIA AUTOMÁTICO (Elimina acúmulo de buffer / delay)
+            if (bufferMonitorInterval) clearInterval(bufferMonitorInterval);
+            bufferMonitorInterval = setInterval(() => {
+              if (remoteAudio.buffered.length > 0) {
+                const bufferedEnd = remoteAudio.buffered.end(remoteAudio.buffered.length - 1);
+                const delay = bufferedEnd - remoteAudio.currentTime;
+                
+                // Se o atraso acumulado for superior a 250ms (0.25s), ressincroniza para tempo real
+                if (delay > 0.25) {
+                  remoteAudio.currentTime = bufferedEnd - 0.05;
+                }
+              }
+            }, 2000);
+
             setupWebAudioEngine(remoteStream);
 
             updateStatusUI("RECEPTOR CONECTADO", "green");
@@ -1130,6 +1154,10 @@
           });
 
           call.on("close", () => {
+            if (bufferMonitorInterval) {
+              clearInterval(bufferMonitorInterval);
+              bufferMonitorInterval = null;
+            }
             updateStatusUI("SINAL PERDIDO", "red");
             logConsole("A Matriz encerrou a transmissão.", "warn");
           });
