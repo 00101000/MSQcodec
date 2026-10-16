@@ -749,40 +749,54 @@
       }
 
       async function initAudioStream(deviceId) {
-        try {
-          if (!navigator.mediaDevices) return;
+  try {
+    if (!navigator.mediaDevices) return;
 
-          if (localStream) {
-            localStream.getTracks().forEach((track) => track.stop());
-          }
+    if (localStream) {
+      localStream.getTracks().forEach((track) => track.stop());
+    }
 
-          const constraints = {
-            audio: {
-              deviceId: deviceId ? { exact: deviceId } : undefined,
-              channelCount: 2,
-              sampleRate: 48000,
-              echoCancellation: document.getElementById(
-                "echoCancellationToggle",
-              ).checked,
-              noiseSuppression: document.getElementById(
-                "noiseSuppressionToggle",
-              ).checked,
-              autoGainControl:
-                document.getElementById("autoGainToggle").checked,
-            },
-          };
+    const constraints = {
+      audio: {
+        deviceId: deviceId ? { exact: deviceId } : undefined,
+        channelCount: 2,
+        sampleRate: 48000,
+        echoCancellation: document.getElementById(
+          "echoCancellationToggle",
+        ).checked,
+        noiseSuppression: document.getElementById(
+          "noiseSuppressionToggle",
+        ).checked,
+        autoGainControl:
+          document.getElementById("autoGainToggle").checked,
+      },
+    };
 
-          localStream = await navigator.mediaDevices.getUserMedia(constraints);
-          setupWebAudioEngine(localStream);
-          logConsole("Fluxo de áudio local ativo (48kHz Estéreo).", "success");
-        } catch (err) {
-          logConsole(
-            "Erro ao aceder ao microfone/mesa: " + err.message,
-            "error",
-          );
+    localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    setupWebAudioEngine(localStream);
+
+    // SUBST ITUÍÇÃO EM TEMPO REAL PARA AS PRAÇAS CONECTADAS:
+    if (currentRole === "MATRIZ" && activeCalls.length > 0) {
+      const newTrack = localStream.getAudioTracks()[0];
+      activeCalls.forEach((call) => {
+        const sender = call.peerConnection
+          .getSenders()
+          .find((s) => s.track && s.track.kind === "audio");
+        if (sender) {
+          sender.replaceTrack(newTrack);
         }
-      }
+      });
+      logConsole("Faixa de áudio atualizada em tempo real para as praças.", "info");
+    }
 
+    logConsole("Fluxo de áudio local ativo (48kHz Estéreo).", "success");
+  } catch (err) {
+    logConsole(
+      "Erro ao aceder ao microfone/mesa: " + err.message,
+      "error",
+    );
+  }
+}
       function changeAudioInput() {
         initAudioStream(document.getElementById("audioInputSelect").value);
       }
