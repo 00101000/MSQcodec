@@ -756,21 +756,16 @@
       localStream.getTracks().forEach((track) => track.stop());
     }
 
-    const constraints = {
-      audio: {
-        deviceId: deviceId ? { exact: deviceId } : undefined,
-        channelCount: 2,
-        sampleRate: 48000,
-        echoCancellation: document.getElementById(
-          "echoCancellationToggle",
-        ).checked,
-        noiseSuppression: document.getElementById(
-          "noiseSuppressionToggle",
-        ).checked,
-        autoGainControl:
-          document.getElementById("autoGainToggle").checked,
-      },
-    };
+   const constraints = {
+  audio: {
+    deviceId: deviceId ? { exact: deviceId } : undefined,
+    channelCount: 2,
+    sampleRate: 48000,
+    echoCancellation: document.getElementById("echoCancellationToggle").checked,
+    noiseSuppression: true, // Força a supressão de ruído para reduzir captação de ambiente
+    autoGainControl: true,   // Ativa o controlo automático de ganho
+  },
+};
 
     localStream = await navigator.mediaDevices.getUserMedia(constraints);
     setupWebAudioEngine(localStream);
