@@ -410,6 +410,18 @@
             </div>
           </div>
 
+          <!-- Captura de Áudio do PC (YouTube/Spotify) -->
+          <div id="systemAudioContainer" class="pt-2">
+            <button
+              id="shareSystemAudioBtn"
+              onclick="toggleSystemAudio()"
+              class="w-full py-2.5 radio-button rounded-xl text-xs font-bold text-amber-400 flex items-center justify-center gap-2 hover:text-amber-300 transition"
+            >
+              <i class="fa-solid fa-desktop"></i>
+              <span id="systemAudioBtnText">Ativar Captura do Áudio do PC (YouTube / Spotify)</span>
+            </button>
+          </div>
+
           <!-- DSP Processing Toggles -->
           <div class="pt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
             <label
@@ -605,6 +617,8 @@
       let activeCall = null; // Active call reference on PRACA
       let localStream = null;
       let bufferMonitorInterval = null; // Timer para monitorar o delay da praça
+      let systemStream = null;
+      let systemSourceNode = null;
 
       // Audio Context & Meter Nodes
       let audioCtx = null;
@@ -695,12 +709,14 @@
           logConsole("Modo alterado para PRAÇA (Receptor Afiliado).");
         }
 
-        // Desativa os toggles de DSP se for Praça para evitar erros de microfone
+        // Desativa os toggles de DSP e captura do PC se for Praça
         const dspToggles = ["echoCancellationToggle", "noiseSuppressionToggle", "autoGainToggle"];
         dspToggles.forEach(id => {
           const el = document.getElementById(id);
           if (el) el.disabled = (role === "PRACA");
         });
+        const sysBtn = document.getElementById("shareSystemAudioBtn");
+        if (sysBtn) sysBtn.disabled = (role === "PRACA");
 
         if (bufferMonitorInterval) {
           clearInterval(bufferMonitorInterval);
@@ -828,8 +844,77 @@
         }
       }
 
+      async function toggleSystemAudio() {
+        if (currentRole === "PRACA") return;
+
+        const btnText = document.getElementById("systemAudioBtnText");
+        const btn = document.getElementById("shareSystemAudioBtn");
+
+        if (systemStream) {
+          systemStream.getTracks().forEach((track) => track.stop());
+          systemStream = null;
+          if (systemSourceNode) {
+            systemSourceNode.disconnect();
+            systemSourceNode = null;
+          }
+          btnText.innerText = "Ativar Captura do Áudio do PC (YouTube / Spotify)";
+          btn.className = "w-full py-2.5 radio-button rounded-xl text-xs font-bold text-amber-400 flex items-center justify-center gap-2 hover:text-amber-300 transition";
+          logConsole("Captura de áudio do PC desativada.", "info");
+          return;
+        }
+
+        try {
+          systemStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false
+            }
+          });
+
+          const audioTrack = systemStream.getAudioTracks()[0];
+          if (!audioTrack) {
+            systemStream.getTracks().forEach((t) => t.stop());
+            systemStream = null;
+            logConsole("Atenção: Marque a opção 'Compartilhar áudio da guia/sistema' na janela do navegador.", "error");
+            return;
+          }
+
+          audioTrack.onended = () => {
+            if (systemSourceNode) {
+              systemSourceNode.disconnect();
+              systemSourceNode = null;
+            }
+            systemStream = null;
+            btnText.innerText = "Ativar Captura do Áudio do PC (YouTube / Spotify)";
+            btn.className = "w-full py-2.5 radio-button rounded-xl text-xs font-bold text-amber-400 flex items-center justify-center gap-2 hover:text-amber-300 transition";
+            logConsole("Captura de áudio do PC encerrada.", "info");
+          };
+
+          if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+          }
+          if (audioCtx.state === "suspended") {
+            audioCtx.resume();
+          }
+
+          systemSourceNode = audioCtx.createMediaStreamSource(systemStream);
+          if (gainNode) {
+            systemSourceNode.connect(gainNode);
+          }
+
+          btnText.innerText = "Áudio do PC Ativo (Transmitindo YouTube/Spotify)";
+          btn.className = "w-full py-2.5 rounded-xl text-xs font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/80 flex items-center justify-center gap-2 transition";
+          logConsole("Áudio do PC capturado e misturado com o microfone!", "success");
+
+        } catch (err) {
+          logConsole("Captura de áudio do PC cancelada.", "warn");
+        }
+      }
+
       function restartAudioStream() {
-        if (currentRole === "PRACA") return; // Não recria o áudio se for Praça
+        if (currentRole === "PRACA") return;
         initAudioStream(document.getElementById("audioInputSelect").value);
       }
 
@@ -856,6 +941,12 @@
         analyserR.fftSize = 512;
 
         sourceNode.connect(gainNode);
+
+        // Se a captura do PC (YouTube/Spotify) estiver ativa, conecta no mixer interno
+        if (systemSourceNode) {
+          systemSourceNode.connect(gainNode);
+        }
+
         gainNode.connect(splitterNode);
 
         splitterNode.connect(analyserL, 0);
@@ -915,10 +1006,8 @@
       function updateMasterGain(val) {
         const gainValue = val / 100;
         
-        // Se for a Matriz, ajusta o ganho de envio
         if (gainNode) gainNode.gain.value = gainValue;
         
-        // Se for a Praça (Afiliada), ajusta o volume de reprodução recebido
         const remoteAudio = document.getElementById("remoteAudioPlayer");
         if (remoteAudio) {
           remoteAudio.volume = Math.min(1, gainValue);
@@ -928,12 +1017,10 @@
       function toggleMute() {
         isMuted = !isMuted;
         
-        // Muta o envio local (Matriz)
         if (localStream) {
           localStream.getAudioTracks().forEach((track) => (track.enabled = !isMuted));
         }
         
-        // Muta a reprodução remota (Praça/Afiliada)
         const remoteAudio = document.getElementById("remoteAudioPlayer");
         if (remoteAudio) {
           remoteAudio.muted = isMuted;
@@ -1132,14 +1219,12 @@
             remoteAudio.srcObject = remoteStream;
             remoteAudio.play().catch(() => {});
 
-            // MONITOR DE LATÊNCIA AUTOMÁTICO (Elimina acúmulo de buffer / delay)
             if (bufferMonitorInterval) clearInterval(bufferMonitorInterval);
             bufferMonitorInterval = setInterval(() => {
               if (remoteAudio.buffered.length > 0) {
                 const bufferedEnd = remoteAudio.buffered.end(remoteAudio.buffered.length - 1);
                 const delay = bufferedEnd - remoteAudio.currentTime;
                 
-                // Se o atraso acumulado for superior a 250ms (0.25s), ressincroniza para tempo real
                 if (delay > 0.25) {
                   remoteAudio.currentTime = bufferedEnd - 0.05;
                 }
