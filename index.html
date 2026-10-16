@@ -410,15 +410,15 @@
             </div>
           </div>
 
-          <!-- Captura de Áudio do PC (YouTube/Spotify) -->
+          <!-- Escuta / Captura de Som do PC (YouTube/Spotify) -->
           <div id="systemAudioContainer" class="pt-2">
             <button
               id="shareSystemAudioBtn"
               onclick="toggleSystemAudio()"
               class="w-full py-2.5 radio-button rounded-xl text-xs font-bold text-amber-400 flex items-center justify-center gap-2 hover:text-amber-300 transition"
             >
-              <i class="fa-solid fa-desktop"></i>
-              <span id="systemAudioBtnText">Ativar Captura do Áudio do PC (YouTube / Spotify)</span>
+              <i class="fa-solid fa-volume-high"></i>
+              <span id="systemAudioBtnText">Ativar Escuta do Áudio do PC (YouTube / Spotify)</span>
             </button>
           </div>
 
@@ -620,7 +620,7 @@
       let systemStream = null;
       let systemSourceNode = null;
 
-      // Audio Context & Meter Nodes
+      // Audio Context, Mixer & Destination Nodes
       let audioCtx = null;
       let sourceNode = null;
       let gainNode = null;
@@ -628,6 +628,8 @@
       let analyserL = null;
       let analyserR = null;
       let testToneOscillator = null;
+      let mixedDestinationNode = null;
+      let processedStream = null;
 
       // Peak Hold Variables
       let peakL = 0;
@@ -709,7 +711,6 @@
           logConsole("Modo alterado para PRAÇA (Receptor Afiliado).");
         }
 
-        // Desativa os toggles de DSP e captura do PC se for Praça
         const dspToggles = ["echoCancellationToggle", "noiseSuppressionToggle", "autoGainToggle"];
         dspToggles.forEach(id => {
           const el = document.getElementById(id);
@@ -804,21 +805,21 @@
           localStream = await navigator.mediaDevices.getUserMedia(constraints);
           setupWebAudioEngine(localStream);
 
-          // SUBSTITUIÇÃO EM TEMPO REAL PARA AS PRAÇAS CONECTADAS:
-          if (currentRole === "MATRIZ" && activeCalls.length > 0) {
-            const newTrack = localStream.getAudioTracks()[0];
+          // ATUALIZA O SINAL EM TEMPO REAL NAS PRAÇAS COM O MIXER PROCESSADO
+          if (currentRole === "MATRIZ" && activeCalls.length > 0 && processedStream) {
+            const newTrack = processedStream.getAudioTracks()[0];
             activeCalls.forEach((call) => {
               const sender = call.peerConnection
                 .getSenders()
                 .find((s) => s.track && s.track.kind === "audio");
-              if (sender) {
+              if (sender && newTrack) {
                 sender.replaceTrack(newTrack);
               }
             });
-            logConsole("Faixa de áudio atualizada em tempo real para as praças.", "info");
+            logConsole("Sinal mixado transmitido em tempo real para as praças.", "info");
           }
 
-          logConsole("Fluxo de áudio local ativo (48kHz Estéreo).", "success");
+          logConsole("Fluxo de entrada local ativo (48kHz Estéreo).", "success");
         } catch (err) {
           logConsole(
             "Erro ao aceder ao microfone/mesa: " + err.message,
@@ -857,9 +858,9 @@
             systemSourceNode.disconnect();
             systemSourceNode = null;
           }
-          btnText.innerText = "Ativar Captura do Áudio do PC (YouTube / Spotify)";
+          btnText.innerText = "Ativar Escuta do Áudio do PC (YouTube / Spotify)";
           btn.className = "w-full py-2.5 radio-button rounded-xl text-xs font-bold text-amber-400 flex items-center justify-center gap-2 hover:text-amber-300 transition";
-          logConsole("Captura de áudio do PC desativada.", "info");
+          logConsole("Escuta de áudio do PC desativada.", "info");
           return;
         }
 
@@ -873,11 +874,14 @@
             }
           });
 
+          // Descarta o vídeo IMEDIATAMENTE. O sistema escutará APENAS O ÁUDIO!
+          systemStream.getVideoTracks().forEach((t) => t.stop());
+
           const audioTrack = systemStream.getAudioTracks()[0];
           if (!audioTrack) {
             systemStream.getTracks().forEach((t) => t.stop());
             systemStream = null;
-            logConsole("Atenção: Marque a opção 'Compartilhar áudio da guia/sistema' na janela do navegador.", "error");
+            logConsole("Atenção: Marque a opção 'Compartilhar áudio' na janela do navegador para o sistema ouvir o PC.", "error");
             return;
           }
 
@@ -887,9 +891,9 @@
               systemSourceNode = null;
             }
             systemStream = null;
-            btnText.innerText = "Ativar Captura do Áudio do PC (YouTube / Spotify)";
+            btnText.innerText = "Ativar Escuta do Áudio do PC (YouTube / Spotify)";
             btn.className = "w-full py-2.5 radio-button rounded-xl text-xs font-bold text-amber-400 flex items-center justify-center gap-2 hover:text-amber-300 transition";
-            logConsole("Captura de áudio do PC encerrada.", "info");
+            logConsole("Escuta de áudio do PC encerrada.", "info");
           };
 
           if (!audioCtx) {
@@ -899,17 +903,17 @@
             audioCtx.resume();
           }
 
-          systemSourceNode = audioCtx.createMediaStreamSource(systemStream);
+          systemSourceNode = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
           if (gainNode) {
             systemSourceNode.connect(gainNode);
           }
 
-          btnText.innerText = "Áudio do PC Ativo (Transmitindo YouTube/Spotify)";
+          btnText.innerText = "Escutando Som do PC (Mixado com Microfone)";
           btn.className = "w-full py-2.5 rounded-xl text-xs font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/80 flex items-center justify-center gap-2 transition";
-          logConsole("Áudio do PC capturado e misturado com o microfone!", "success");
+          logConsole("Som do PC capturado e misturado com o microfone e a transmissão!", "success");
 
         } catch (err) {
-          logConsole("Captura de áudio do PC cancelada.", "warn");
+          logConsole("Ativação de som do PC cancelada.", "warn");
         }
       }
 
@@ -928,29 +932,44 @@
           audioCtx.resume();
         }
 
+        // Nó de destino que agrupa o canal de transmissão final (WebRTC Output)
+        if (!mixedDestinationNode) {
+          mixedDestinationNode = audioCtx.createMediaStreamDestination();
+          processedStream = mixedDestinationNode.stream;
+        }
+
+        if (sourceNode) {
+          try { sourceNode.disconnect(); } catch(e){}
+        }
+
         sourceNode = audioCtx.createMediaStreamSource(stream);
-        gainNode = audioCtx.createGain();
-        gainNode.gain.value =
-          document.getElementById("masterFader").value / 100;
 
-        splitterNode = audioCtx.createChannelSplitter(2);
-        analyserL = audioCtx.createAnalyser();
-        analyserR = audioCtx.createAnalyser();
+        if (!gainNode) {
+          gainNode = audioCtx.createGain();
+          gainNode.gain.value =
+            document.getElementById("masterFader").value / 100;
 
-        analyserL.fftSize = 512;
-        analyserR.fftSize = 512;
+          splitterNode = audioCtx.createChannelSplitter(2);
+          analyserL = audioCtx.createAnalyser();
+          analyserR = audioCtx.createAnalyser();
+
+          analyserL.fftSize = 512;
+          analyserR.fftSize = 512;
+
+          gainNode.connect(splitterNode);
+          splitterNode.connect(analyserL, 0);
+          splitterNode.connect(analyserR, 1 % splitterNode.numberOfOutputs);
+
+          // CONECTA A MESA DE SOM MIXADA DIRETO NA SAÍDA WEBRTC
+          gainNode.connect(mixedDestinationNode);
+        }
 
         sourceNode.connect(gainNode);
 
-        // Se a captura do PC (YouTube/Spotify) estiver ativa, conecta no mixer interno
+        // Se o áudio do PC (YouTube/Spotify) estiver ativo, injeta no mixer
         if (systemSourceNode) {
-          systemSourceNode.connect(gainNode);
+          try { systemSourceNode.connect(gainNode); } catch(e){}
         }
-
-        gainNode.connect(splitterNode);
-
-        splitterNode.connect(analyserL, 0);
-        splitterNode.connect(analyserR, 1 % splitterNode.numberOfOutputs);
 
         requestAnimationFrame(drawVuMeters);
       }
@@ -1142,7 +1161,8 @@
         peer.on("call", (call) => {
           logConsole(`Nova Praça conectando-se: ${call.peer}...`, "warn");
 
-          const streamToSend = localStream || createSilentStream();
+          // ENVIA O SINAL MIXADO (MICROFONE + SOM DO PC + FADER) PARA A PRAÇA
+          const streamToSend = processedStream || localStream || createSilentStream();
           call.answer(streamToSend);
 
           activeCalls.push(call);
