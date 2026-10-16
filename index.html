@@ -694,6 +694,13 @@
           logConsole("Modo alterado para PRAÇA (Receptor Afiliado).");
         }
 
+        // Desativa os toggles de DSP se for Praça para evitar erros de microfone
+        const dspToggles = ["echoCancellationToggle", "noiseSuppressionToggle", "autoGainToggle"];
+        dspToggles.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.disabled = (role === "PRACA");
+        });
+
         if (peer) {
           peer.destroy();
           peer = null;
@@ -749,49 +756,55 @@
       }
 
       async function initAudioStream(deviceId) {
-  try {
-    if (!navigator.mediaDevices) return;
+        try {
+          if (!navigator.mediaDevices) return;
 
-    if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop());
-    }
+          if (localStream) {
+            localStream.getTracks().forEach((track) => track.stop());
+          }
 
-   const constraints = {
-  audio: {
-    deviceId: deviceId ? { exact: deviceId } : undefined,
-    channelCount: 2,
-    sampleRate: 48000,
-    echoCancellation: document.getElementById("echoCancellationToggle").checked,
-    noiseSuppression: true, // Força a supressão de ruído para reduzir captação de ambiente
-    autoGainControl: true,   // Ativa o controlo automático de ganho
-  },
-};
+          const constraints = {
+            audio: {
+              deviceId: deviceId ? { exact: deviceId } : undefined,
+              channelCount: 2,
+              sampleRate: 48000,
+              echoCancellation: document.getElementById(
+                "echoCancellationToggle",
+              ).checked,
+              noiseSuppression: document.getElementById(
+                "noiseSuppressionToggle",
+              ).checked,
+              autoGainControl:
+                document.getElementById("autoGainToggle").checked,
+            },
+          };
 
-    localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    setupWebAudioEngine(localStream);
+          localStream = await navigator.mediaDevices.getUserMedia(constraints);
+          setupWebAudioEngine(localStream);
 
-    // SUBST ITUÍÇÃO EM TEMPO REAL PARA AS PRAÇAS CONECTADAS:
-    if (currentRole === "MATRIZ" && activeCalls.length > 0) {
-      const newTrack = localStream.getAudioTracks()[0];
-      activeCalls.forEach((call) => {
-        const sender = call.peerConnection
-          .getSenders()
-          .find((s) => s.track && s.track.kind === "audio");
-        if (sender) {
-          sender.replaceTrack(newTrack);
+          // SUBSTITUIÇÃO EM TEMPO REAL PARA AS PRAÇAS CONECTADAS:
+          if (currentRole === "MATRIZ" && activeCalls.length > 0) {
+            const newTrack = localStream.getAudioTracks()[0];
+            activeCalls.forEach((call) => {
+              const sender = call.peerConnection
+                .getSenders()
+                .find((s) => s.track && s.track.kind === "audio");
+              if (sender) {
+                sender.replaceTrack(newTrack);
+              }
+            });
+            logConsole("Faixa de áudio atualizada em tempo real para as praças.", "info");
+          }
+
+          logConsole("Fluxo de áudio local ativo (48kHz Estéreo).", "success");
+        } catch (err) {
+          logConsole(
+            "Erro ao aceder ao microfone/mesa: " + err.message,
+            "error",
+          );
         }
-      });
-      logConsole("Faixa de áudio atualizada em tempo real para as praças.", "info");
-    }
+      }
 
-    logConsole("Fluxo de áudio local ativo (48kHz Estéreo).", "success");
-  } catch (err) {
-    logConsole(
-      "Erro ao aceder ao microfone/mesa: " + err.message,
-      "error",
-    );
-  }
-}
       function changeAudioInput() {
         initAudioStream(document.getElementById("audioInputSelect").value);
       }
@@ -810,6 +823,7 @@
       }
 
       function restartAudioStream() {
+        if (currentRole === "PRACA") return; // Não recria o áudio se for Praça
         initAudioStream(document.getElementById("audioInputSelect").value);
       }
 
@@ -893,19 +907,36 @@
       }
 
       function updateMasterGain(val) {
-        if (gainNode) gainNode.gain.value = val / 100;
+        const gainValue = val / 100;
+        
+        // Se for a Matriz, ajusta o ganho de envio
+        if (gainNode) gainNode.gain.value = gainValue;
+        
+        // Se for a Praça (Afiliada), ajusta o volume de reprodução recebido
+        const remoteAudio = document.getElementById("remoteAudioPlayer");
+        if (remoteAudio) {
+          remoteAudio.volume = Math.min(1, gainValue);
+        }
       }
 
       function toggleMute() {
         isMuted = !isMuted;
+        
+        // Muta o envio local (Matriz)
         if (localStream) {
-          localStream
-            .getAudioTracks()
-            .forEach((track) => (track.enabled = !isMuted));
+          localStream.getAudioTracks().forEach((track) => (track.enabled = !isMuted));
         }
+        
+        // Muta a reprodução remota (Praça/Afiliada)
+        const remoteAudio = document.getElementById("remoteAudioPlayer");
+        if (remoteAudio) {
+          remoteAudio.muted = isMuted;
+        }
+
         document.getElementById("muteBtn").className = isMuted
           ? "w-full py-2 radio-button rounded-xl text-xs font-bold text-red-400 border-red-500/50 flex items-center justify-center gap-1.5"
           : "w-full py-2 radio-button rounded-xl text-xs font-bold text-slate-300 flex items-center justify-center gap-1.5 hover:text-white";
+          
         logConsole(isMuted ? "Mute ativado." : "Mute desativado.");
       }
 
