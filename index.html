@@ -197,14 +197,13 @@
             class="px-5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-amber-500 text-slate-950 shadow"
           >
             <i class="fa-solid fa-broadcast-tower"></i> ESTÚDIO MATRIZ
-            (Geradora)
           </button>
           <button
             id="rolePracaBtn"
             onclick="switchRole('PRACA')"
             class="px-5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 text-slate-400 hover:text-white"
           >
-            <i class="fa-solid fa-satellite-dish"></i> PRAÇA (Afiliada)
+            <i class="fa-solid fa-satellite-dish"></i> PRAÇA
           </button>
         </div>
 
@@ -388,10 +387,19 @@
               <select
                 id="audioInputSelect"
                 onchange="changeAudioInput()"
-                class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+                class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono mb-2"
               >
-                <option value="">A carregar dispositivos...</option>
+                <option value="">Carregando dispositivos...</option>
               </select>
+
+              <button
+                id="btnCapturarSomPC"
+                onclick="capturarSomDoPC()"
+                class="w-full py-2.5 radio-button rounded-xl text-xs font-bold text-amber-400 hover:text-white flex items-center justify-center gap-2 border border-amber-500/30 transition"
+              >
+                <i class="fa-solid fa-desktop"></i> CAPTURAR ÁUDIO DO PC /
+                SISTEMA
+              </button>
             </div>
 
             <!-- Output Audio Select (Praça Mode) -->
@@ -408,18 +416,6 @@
                 <option value="">Saída Padrão do Sistema</option>
               </select>
             </div>
-          </div>
-
-          <!-- Escuta / Captura de Som do PC (YouTube/Spotify) -->
-          <div id="systemAudioContainer" class="pt-2">
-            <button
-              id="shareSystemAudioBtn"
-              onclick="toggleSystemAudio()"
-              class="w-full py-2.5 radio-button rounded-xl text-xs font-bold text-amber-400 flex items-center justify-center gap-2 hover:text-amber-300 transition"
-            >
-              <i class="fa-solid fa-volume-high"></i>
-              <span id="systemAudioBtnText">Ativar Escuta do Áudio do PC (YouTube / Spotify)</span>
-            </button>
           </div>
 
           <!-- DSP Processing Toggles -->
@@ -449,7 +445,7 @@
             <label
               class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 cursor-pointer text-xs text-slate-300"
             >
-              <span>Controlo Auto de Ganho</span>
+              <span>Controle Automático de Ganho</span>
               <input
                 type="checkbox"
                 id="autoGainToggle"
@@ -613,14 +609,12 @@
 
       let currentRole = "MATRIZ"; // 'MATRIZ' or 'PRACA'
       let peer = null;
-      let activeCalls = []; // Array of active calls on MATRIZ
-      let activeCall = null; // Active call reference on PRACA
+      let activeCalls = []; // Array de chamadas ativas na MATRIZ
+      let activeCall = null; // Referência da chamada ativa na PRAÇA
       let localStream = null;
       let bufferMonitorInterval = null; // Timer para monitorar o delay da praça
-      let systemStream = null;
-      let systemSourceNode = null;
 
-      // Audio Context, Mixer & Destination Nodes
+      // Audio Context & Meter Nodes
       let audioCtx = null;
       let sourceNode = null;
       let gainNode = null;
@@ -628,8 +622,6 @@
       let analyserL = null;
       let analyserR = null;
       let testToneOscillator = null;
-      let mixedDestinationNode = null;
-      let processedStream = null;
 
       // Peak Hold Variables
       let peakL = 0;
@@ -678,6 +670,23 @@
           '<div class="text-slate-500">[00:00:00] Log limpo.</div>';
       }
 
+      function copyConsoleLog() {
+        const consoleEl = document.getElementById("consoleLog");
+        if (!consoleEl) return;
+        const text = consoleEl.innerText;
+        navigator.clipboard
+          .writeText(text)
+          .then(() => {
+            logConsole(
+              "Logs copiados para a área de transferência!",
+              "success",
+            );
+          })
+          .catch((err) => {
+            logConsole("Erro ao copiar logs: " + err.message, "error");
+          });
+      }
+
       function switchRole(role) {
         currentRole = role;
         const matrizBtn = document.getElementById("roleMatrizBtn");
@@ -697,27 +706,34 @@
           primaryBtnText.innerText = "INICIAR TRANSMISSÃO MATRIZ";
           pracasPanel.classList.remove("hidden");
           inputContainer.classList.remove("opacity-50", "pointer-events-none");
-          logConsole("Modo alterado para MATRIZ (Estúdio Gerador).");
+          logConsole("Modo alterado para MATRIZ.");
         } else {
           pracaBtn.className =
             "px-5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-amber-500 text-slate-950 shadow";
           matrizBtn.className =
             "px-5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 text-slate-400 hover:text-white";
           descText.innerHTML =
-            'Introduza o ID da Rádio Matriz a que pretende conectar-se e clique em "CONECTAR À MATRIZ".';
+            'Digite o ID da Rádio Matriz à qual deseja se conectar e clique em "CONECTAR À MATRIZ".';
           primaryBtnText.innerText = "CONECTAR À MATRIZ";
           pracasPanel.classList.add("hidden");
           inputContainer.classList.add("opacity-50", "pointer-events-none");
-          logConsole("Modo alterado para PRAÇA (Receptor Afiliado).");
+          logConsole("Modo alterado para PRAÇA.");
+
+          if (localStream) {
+            localStream.getTracks().forEach((track) => track.stop());
+            localStream = null;
+          }
         }
 
-        const dspToggles = ["echoCancellationToggle", "noiseSuppressionToggle", "autoGainToggle"];
-        dspToggles.forEach(id => {
+        const dspToggles = [
+          "echoCancellationToggle",
+          "noiseSuppressionToggle",
+          "autoGainToggle",
+        ];
+        dspToggles.forEach((id) => {
           const el = document.getElementById(id);
-          if (el) el.disabled = (role === "PRACA");
+          if (el) el.disabled = role === "PRACA";
         });
-        const sysBtn = document.getElementById("shareSystemAudioBtn");
-        if (sysBtn) sysBtn.disabled = (role === "PRACA");
 
         if (bufferMonitorInterval) {
           clearInterval(bufferMonitorInterval);
@@ -739,47 +755,78 @@
       }
 
       async function enumerateAudioDevices() {
-        try {
-          if (!navigator.mediaDevices) {
-            logConsole(
-              "Atenção: Acesse via HTTPS ou ative a flag de origem segura no Chrome para liberar o áudio na rede local.",
-              "warn",
-            );
-            return;
-          }
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          const inputSelect = document.getElementById("audioInputSelect");
-          const outputSelect = document.getElementById("audioOutputSelect");
+        const inputSelect = document.getElementById("audioInputSelect");
+        const outputSelect = document.getElementById("audioOutputSelect");
 
+        if (
+          !navigator.mediaDevices ||
+          !navigator.mediaDevices.enumerateDevices
+        ) {
+          inputSelect.innerHTML =
+            '<option value="">Erro: Requer HTTPS ou Localhost</option>';
+          outputSelect.innerHTML =
+            '<option value="">Saída Padrão do Sistema</option>';
+          logConsole(
+            "Erro: Acesso a áudio bloqueado pelo navegador. Use HTTPS ou localhost.",
+            "error",
+          );
+          return;
+        }
+
+        try {
+          if (currentRole === "MATRIZ" && !localStream) {
+            try {
+              localStream = await navigator.mediaDevices.getUserMedia({
+                audio: true,
+              });
+              setupWebAudioEngine(localStream);
+            } catch (e) {
+              logConsole("Aguardando permissão ou captura de som...", "warn");
+            }
+          }
+
+          const devices = await navigator.mediaDevices.enumerateDevices();
           inputSelect.innerHTML = "";
           outputSelect.innerHTML =
             '<option value="">Saída Padrão do Sistema</option>';
 
+          let inputCount = 0;
           devices.forEach((device) => {
-            const option = document.createElement("option");
-            option.value = device.deviceId;
-
             if (device.kind === "audioinput") {
-              option.text =
-                device.label || `Entrada de Som ${inputSelect.length + 1}`;
+              inputCount++;
+              const option = document.createElement("option");
+              option.value = device.deviceId;
+              option.text = device.label || `Entrada de Som ${inputCount}`;
               inputSelect.appendChild(option);
             } else if (device.kind === "audiooutput") {
+              const option = document.createElement("option");
+              option.value = device.deviceId;
               option.text =
                 device.label || `Saída de Som ${outputSelect.length}`;
               outputSelect.appendChild(option);
             }
           });
 
-          if (inputSelect.options.length > 0) {
+          if (inputCount === 0) {
+            inputSelect.innerHTML =
+              '<option value="">Nenhum dispositivo encontrado</option>';
+          } else if (
+            inputSelect.options.length > 0 &&
+            currentRole === "MATRIZ" &&
+            !localStream
+          ) {
             initAudioStream(inputSelect.value);
           }
         } catch (err) {
+          inputSelect.innerHTML =
+            '<option value="">Erro ao carregar (Permissão negada)</option>';
           logConsole("Erro ao listar dispositivos: " + err.message, "error");
         }
       }
 
       async function initAudioStream(deviceId) {
         try {
+          if (currentRole === "PRACA") return;
           if (!navigator.mediaDevices) return;
 
           if (localStream) {
@@ -805,31 +852,75 @@
           localStream = await navigator.mediaDevices.getUserMedia(constraints);
           setupWebAudioEngine(localStream);
 
-          // ATUALIZA O SINAL EM TEMPO REAL NAS PRAÇAS COM O MIXER PROCESSADO
-          if (currentRole === "MATRIZ" && activeCalls.length > 0 && processedStream) {
-            const newTrack = processedStream.getAudioTracks()[0];
+          if (currentRole === "MATRIZ" && activeCalls.length > 0) {
+            const newTrack = localStream.getAudioTracks()[0];
             activeCalls.forEach((call) => {
               const sender = call.peerConnection
                 .getSenders()
                 .find((s) => s.track && s.track.kind === "audio");
-              if (sender && newTrack) {
+              if (sender) {
                 sender.replaceTrack(newTrack);
               }
             });
-            logConsole("Sinal mixado transmitido em tempo real para as praças.", "info");
+            logConsole(
+              "Faixa de áudio atualizada em tempo real para as praças.",
+              "info",
+            );
           }
 
-          logConsole("Fluxo de entrada local ativo (48kHz Estéreo).", "success");
+          logConsole("Fluxo de áudio local ativo (48kHz Estéreo).", "success");
         } catch (err) {
           logConsole(
-            "Erro ao aceder ao microfone/mesa: " + err.message,
+            "Erro ao acessar o microfone/mesa: " + err.message,
             "error",
           );
         }
       }
 
+      async function capturarSomDoPC() {
+        if (currentRole !== "MATRIZ") return;
+        try {
+          const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+            },
+          });
+
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack) {
+            videoTrack.stop();
+          }
+
+          if (localStream) {
+            localStream.getTracks().forEach((track) => track.stop());
+          }
+
+          localStream = stream;
+          setupWebAudioEngine(localStream);
+
+          if (activeCalls.length > 0) {
+            const audioTrack = localStream.getAudioTracks()[0];
+            activeCalls.forEach((call) => {
+              const sender = call.peerConnection
+                .getSenders()
+                .find((s) => s.track && s.track.kind === "audio");
+              if (sender) sender.replaceTrack(audioTrack);
+            });
+          }
+
+          logConsole("Áudio interno do PC capturado com sucesso!", "success");
+        } catch (err) {
+          logConsole("Erro ao capturar áudio do PC: " + err.message, "error");
+        }
+      }
+
       function changeAudioInput() {
-        initAudioStream(document.getElementById("audioInputSelect").value);
+        if (currentRole === "MATRIZ") {
+          initAudioStream(document.getElementById("audioInputSelect").value);
+        }
       }
 
       function changeAudioOutput() {
@@ -842,78 +933,6 @@
             .catch((e) =>
               logConsole("Erro ao mudar saída: " + e.message, "error"),
             );
-        }
-      }
-
-      async function toggleSystemAudio() {
-        if (currentRole === "PRACA") return;
-
-        const btnText = document.getElementById("systemAudioBtnText");
-        const btn = document.getElementById("shareSystemAudioBtn");
-
-        if (systemStream) {
-          systemStream.getTracks().forEach((track) => track.stop());
-          systemStream = null;
-          if (systemSourceNode) {
-            systemSourceNode.disconnect();
-            systemSourceNode = null;
-          }
-          btnText.innerText = "Ativar Escuta do Áudio do PC (YouTube / Spotify)";
-          btn.className = "w-full py-2.5 radio-button rounded-xl text-xs font-bold text-amber-400 flex items-center justify-center gap-2 hover:text-amber-300 transition";
-          logConsole("Escuta de áudio do PC desativada.", "info");
-          return;
-        }
-
-        try {
-          systemStream = await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: {
-              echoCancellation: false,
-              noiseSuppression: false,
-              autoGainControl: false
-            }
-          });
-
-          // Descarta o vídeo IMEDIATAMENTE. O sistema escutará APENAS O ÁUDIO!
-          systemStream.getVideoTracks().forEach((t) => t.stop());
-
-          const audioTrack = systemStream.getAudioTracks()[0];
-          if (!audioTrack) {
-            systemStream.getTracks().forEach((t) => t.stop());
-            systemStream = null;
-            logConsole("Atenção: Marque a opção 'Compartilhar áudio' na janela do navegador para o sistema ouvir o PC.", "error");
-            return;
-          }
-
-          audioTrack.onended = () => {
-            if (systemSourceNode) {
-              systemSourceNode.disconnect();
-              systemSourceNode = null;
-            }
-            systemStream = null;
-            btnText.innerText = "Ativar Escuta do Áudio do PC (YouTube / Spotify)";
-            btn.className = "w-full py-2.5 radio-button rounded-xl text-xs font-bold text-amber-400 flex items-center justify-center gap-2 hover:text-amber-300 transition";
-            logConsole("Escuta de áudio do PC encerrada.", "info");
-          };
-
-          if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-          }
-          if (audioCtx.state === "suspended") {
-            audioCtx.resume();
-          }
-
-          systemSourceNode = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
-          if (gainNode) {
-            systemSourceNode.connect(gainNode);
-          }
-
-          btnText.innerText = "Escutando Som do PC (Mixado com Microfone)";
-          btn.className = "w-full py-2.5 rounded-xl text-xs font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/80 flex items-center justify-center gap-2 transition";
-          logConsole("Som do PC capturado e misturado com o microfone e a transmissão!", "success");
-
-        } catch (err) {
-          logConsole("Ativação de som do PC cancelada.", "warn");
         }
       }
 
@@ -932,44 +951,23 @@
           audioCtx.resume();
         }
 
-        // Nó de destino que agrupa o canal de transmissão final (WebRTC Output)
-        if (!mixedDestinationNode) {
-          mixedDestinationNode = audioCtx.createMediaStreamDestination();
-          processedStream = mixedDestinationNode.stream;
-        }
-
-        if (sourceNode) {
-          try { sourceNode.disconnect(); } catch(e){}
-        }
-
         sourceNode = audioCtx.createMediaStreamSource(stream);
+        gainNode = audioCtx.createGain();
+        gainNode.gain.value =
+          document.getElementById("masterFader").value / 100;
 
-        if (!gainNode) {
-          gainNode = audioCtx.createGain();
-          gainNode.gain.value =
-            document.getElementById("masterFader").value / 100;
+        splitterNode = audioCtx.createChannelSplitter(2);
+        analyserL = audioCtx.createAnalyser();
+        analyserR = audioCtx.createAnalyser();
 
-          splitterNode = audioCtx.createChannelSplitter(2);
-          analyserL = audioCtx.createAnalyser();
-          analyserR = audioCtx.createAnalyser();
-
-          analyserL.fftSize = 512;
-          analyserR.fftSize = 512;
-
-          gainNode.connect(splitterNode);
-          splitterNode.connect(analyserL, 0);
-          splitterNode.connect(analyserR, 1 % splitterNode.numberOfOutputs);
-
-          // CONECTA A MESA DE SOM MIXADA DIRETO NA SAÍDA WEBRTC
-          gainNode.connect(mixedDestinationNode);
-        }
+        analyserL.fftSize = 512;
+        analyserR.fftSize = 512;
 
         sourceNode.connect(gainNode);
+        gainNode.connect(splitterNode);
 
-        // Se o áudio do PC (YouTube/Spotify) estiver ativo, injeta no mixer
-        if (systemSourceNode) {
-          try { systemSourceNode.connect(gainNode); } catch(e){}
-        }
+        splitterNode.connect(analyserL, 0);
+        splitterNode.connect(analyserR, 1 % splitterNode.numberOfOutputs);
 
         requestAnimationFrame(drawVuMeters);
       }
@@ -1024,9 +1022,9 @@
 
       function updateMasterGain(val) {
         const gainValue = val / 100;
-        
+
         if (gainNode) gainNode.gain.value = gainValue;
-        
+
         const remoteAudio = document.getElementById("remoteAudioPlayer");
         if (remoteAudio) {
           remoteAudio.volume = Math.min(1, gainValue);
@@ -1035,11 +1033,13 @@
 
       function toggleMute() {
         isMuted = !isMuted;
-        
+
         if (localStream) {
-          localStream.getAudioTracks().forEach((track) => (track.enabled = !isMuted));
+          localStream
+            .getAudioTracks()
+            .forEach((track) => (track.enabled = !isMuted));
         }
-        
+
         const remoteAudio = document.getElementById("remoteAudioPlayer");
         if (remoteAudio) {
           remoteAudio.muted = isMuted;
@@ -1048,7 +1048,7 @@
         document.getElementById("muteBtn").className = isMuted
           ? "w-full py-2 radio-button rounded-xl text-xs font-bold text-red-400 border-red-500/50 flex items-center justify-center gap-1.5"
           : "w-full py-2 radio-button rounded-xl text-xs font-bold text-slate-300 flex items-center justify-center gap-1.5 hover:text-white";
-          
+
         logConsole(isMuted ? "Mute ativado." : "Mute desativado.");
       }
 
@@ -1092,11 +1092,15 @@
           .toUpperCase();
 
         if (!stationId) {
-          logConsole("Escreva um ID para a rádio!", "error");
+          logConsole("Digite um ID para a rádio!", "error");
           return;
         }
 
         if (currentRole === "MATRIZ") {
+          if (!localStream && navigator.mediaDevices) {
+            const inputSelect = document.getElementById("audioInputSelect");
+            initAudioStream(inputSelect.value);
+          }
           startMatrizBroadcaster(stationId);
         } else {
           connectPracaToMatriz(stationId);
@@ -1155,14 +1159,13 @@
         peer.on("open", (id) => {
           updateStatusUI("MATRIZ NO AR", "green");
           document.getElementById("peerBadge").innerText = "MATRIZ ATIVA";
-          logConsole(`EMISSÃO MATRIZ NO AR! ID: ${id}`, "success");
+          logConsole(`TRANSMISSÃO MATRIZ NO AR! ID: ${id}`, "success");
         });
 
         peer.on("call", (call) => {
           logConsole(`Nova Praça conectando-se: ${call.peer}...`, "warn");
 
-          // ENVIA O SINAL MIXADO (MICROFONE + SOM DO PC + FADER) PARA A PRAÇA
-          const streamToSend = processedStream || localStream || createSilentStream();
+          const streamToSend = localStream || createSilentStream();
           call.answer(streamToSend);
 
           activeCalls.push(call);
@@ -1228,7 +1231,7 @@
         });
 
         peer.on("open", (myId) => {
-          logConsole(`Identificador local gerado. Ligando à Matriz...`);
+          logConsole(`Identificador local gerado. Conectando à Matriz...`);
 
           const dummyStream = createSilentStream();
           const call = peer.call(matrizStationId, dummyStream);
@@ -1242,9 +1245,11 @@
             if (bufferMonitorInterval) clearInterval(bufferMonitorInterval);
             bufferMonitorInterval = setInterval(() => {
               if (remoteAudio.buffered.length > 0) {
-                const bufferedEnd = remoteAudio.buffered.end(remoteAudio.buffered.length - 1);
+                const bufferedEnd = remoteAudio.buffered.end(
+                  remoteAudio.buffered.length - 1,
+                );
                 const delay = bufferedEnd - remoteAudio.currentTime;
-                
+
                 if (delay > 0.25) {
                   remoteAudio.currentTime = bufferedEnd - 0.05;
                 }
@@ -1269,7 +1274,7 @@
         });
 
         peer.on("error", (err) => {
-          logConsole("Falha ao ligar à Matriz: " + err.type, "error");
+          logConsole("Falha ao conectar à Matriz: " + err.type, "error");
           updateStatusUI("ERRO DE CONEXÃO", "red");
         });
       }
@@ -1316,7 +1321,7 @@
                         <span class="led-indicator led-green"></span>
                         <span class="font-mono text-slate-200 font-bold">PRAÇA #${index + 1} (${call.peer.substring(0, 8)}...)</span>
                     </div>
-                    <span class="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800 font-mono">EM DIRETO</span>
+                    <span class="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800 font-mono">AO VIVO</span>
                 `;
           container.appendChild(item);
         });
