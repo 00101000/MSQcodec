@@ -1,0 +1,1153 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VOXCODEC AoIP - Transmissor Matriz & Praças</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- FontAwesome Icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <!-- PeerJS WebRTC Library for Automatic P2P Signaling -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Inter", "sans-serif"],
+              mono: ["JetBrains Mono", "monospace"],
+            },
+            colors: {
+              slate: {
+                850: "#111827",
+                950: "#090d16",
+              },
+              radio: {
+                gold: "#fbbf24",
+                green: "#22c55e",
+                red: "#ef4444",
+                blue: "#3b82f6",
+                panel: "#1e293b",
+                border: "#334155",
+              },
+            },
+          },
+        },
+      };
+    </script>
+
+    <style>
+      body {
+        background-color: #090d16;
+        color: #e2e8f0;
+        user-select: none;
+      }
+
+      .radio-panel {
+        background: linear-gradient(145deg, #1e293b, #0f172a);
+        border: 1px solid #334155;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      }
+
+      .radio-button {
+        background: linear-gradient(180deg, #334155 0%, #1e293b 100%);
+        border: 1px solid #475569;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.1),
+          0 2px 4px rgba(0, 0, 0, 0.4);
+        transition: all 0.15s ease;
+      }
+
+      .radio-button:hover {
+        background: linear-gradient(180deg, #475569 0%, #334155 100%);
+        border-color: #64748b;
+      }
+
+      .radio-button:active {
+        background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+      }
+
+      .btn-live-on {
+        background: linear-gradient(
+          180deg,
+          #22c55e 0%,
+          #15803d 100%
+        ) !important;
+        border-color: #4ade80 !important;
+        box-shadow: 0 0 20px rgba(34, 197, 94, 0.6) !important;
+        color: #ffffff !important;
+      }
+
+      .btn-live-off {
+        background: linear-gradient(
+          180deg,
+          #ef4444 0%,
+          #b91c1c 100%
+        ) !important;
+        border-color: #f87171 !important;
+        box-shadow: 0 0 15px rgba(239, 68, 68, 0.4) !important;
+        color: #ffffff !important;
+      }
+
+      .led-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+        background-color: #334155;
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
+      }
+
+      .led-green {
+        background-color: #22c55e;
+        box-shadow:
+          0 0 10px #22c55e,
+          inset 0 1px 2px rgba(255, 255, 255, 0.5);
+      }
+      .led-red {
+        background-color: #ef4444;
+        box-shadow:
+          0 0 10px #ef4444,
+          inset 0 1px 2px rgba(255, 255, 255, 0.5);
+      }
+      .led-yellow {
+        background-color: #eab308;
+        box-shadow:
+          0 0 10px #eab308,
+          inset 0 1px 2px rgba(255, 255, 255, 0.5);
+      }
+
+      input[type="range"].fader-vertical {
+        writing-mode: bt-lr;
+        -webkit-appearance: slider-vertical;
+        width: 24px;
+        height: 150px;
+        background: #0f172a;
+        border-radius: 4px;
+        outline: none;
+      }
+
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0f172a;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex flex-col font-sans antialiased pb-6">
+    <!-- Top Header / Station Bar -->
+    <header
+      class="bg-slate-900 border-b border-slate-800 px-4 py-3 sticky top-0 z-50 shadow-md"
+    >
+      <div
+        class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4"
+      >
+        <!-- Branding -->
+        <div class="flex items-center space-x-3">
+          <div
+            class="w-10 h-10 rounded-lg bg-gradient-to-tr from-amber-500 to-red-600 flex items-center justify-center shadow-lg shadow-amber-500/20"
+          >
+            <i class="fa-solid fa-tower-cell text-slate-950 text-xl"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="font-extrabold text-lg tracking-wider text-white">
+                VOXCODEC
+                <span
+                  class="text-amber-400 text-xs font-mono font-normal px-2 py-0.5 rounded bg-amber-400/10 border border-amber-400/20"
+                  >AUTO-P2P v3.0</span
+                >
+              </h1>
+            </div>
+            <p class="text-xs text-slate-400 font-mono">
+              TRANSMISSÃO AUTOMÁTICA MATRIZ ➔ PRAÇAS
+            </p>
+          </div>
+        </div>
+
+        <!-- Mode Selector (Matriz vs Praça) -->
+        <div
+          class="bg-slate-950 p-1.5 rounded-xl border border-slate-800 flex items-center gap-1"
+        >
+          <button
+            id="roleMatrizBtn"
+            onclick="switchRole('MATRIZ')"
+            class="px-5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-amber-500 text-slate-950 shadow"
+          >
+            <i class="fa-solid fa-broadcast-tower"></i> ESTÚDIO MATRIZ
+            (Geradora)
+          </button>
+          <button
+            id="rolePracaBtn"
+            onclick="switchRole('PRACA')"
+            class="px-5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 text-slate-400 hover:text-white"
+          >
+            <i class="fa-solid fa-satellite-dish"></i> PRAÇA (Afiliada)
+          </button>
+        </div>
+
+        <!-- System Status Indicator -->
+        <div class="flex items-center gap-4 text-xs font-mono">
+          <div
+            class="bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 flex items-center gap-2"
+          >
+            <span id="globalLed" class="led-indicator led-red"></span>
+            <span
+              id="globalStatusText"
+              class="text-slate-300 font-semibold uppercase"
+              >DESCONECTADO</span
+            >
+          </div>
+          <div class="hidden sm:block text-slate-400 text-right">
+            <div id="utcClock" class="text-amber-400 font-bold text-sm">
+              00:00:00 UTC
+            </div>
+            <div class="text-[10px]">OPUS 48kHz BROADCAST</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Studio Dashboard -->
+    <main
+      class="max-w-7xl mx-auto w-full px-4 mt-6 flex-grow grid grid-cols-1 lg:grid-cols-12 gap-6"
+    >
+      <!-- LEFT COLUMN: Server & Peer Connection Setup (4 Cols) -->
+      <section class="lg:col-span-4 flex flex-col gap-6">
+        <!-- Station & Channel Identifier Panel -->
+        <div class="radio-panel rounded-2xl p-5 flex flex-col gap-4">
+          <div
+            class="flex items-center justify-between border-b border-slate-700/60 pb-3"
+          >
+            <h2
+              class="text-sm font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2"
+            >
+              <i class="fa-solid fa-key text-amber-400"></i> Nome do Canal / ID
+              da Rádio
+            </h2>
+            <span
+              id="peerBadge"
+              class="text-[10px] bg-slate-800 text-amber-400 font-mono px-2 py-0.5 rounded border border-slate-700"
+              >DESCONECTADO</span
+            >
+          </div>
+
+          <!-- Explanation text depending on role -->
+          <p
+            id="roleDescriptionText"
+            class="text-xs text-slate-400 leading-relaxed"
+          >
+            Crie um identificador único para o seu estúdio (ex:
+            <span class="text-amber-400 font-mono">RADIO-MATRIZ-SP</span>). As
+            praças irão utilizar este mesmo código para conectar-se
+            automaticamente.
+          </p>
+
+          <!-- Station ID Input Field -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1"
+              >ID da Rádio Matriz:</label
+            >
+            <div class="relative">
+              <input
+                type="text"
+                id="stationIdInput"
+                value="RADIO-MATRIZ-OFICIAL"
+                class="w-full bg-slate-950 border border-slate-700 text-amber-400 font-mono font-bold text-sm rounded-xl p-3 outline-none focus:border-amber-500 pr-10 uppercase"
+              />
+              <button
+                onclick="copyStationId()"
+                class="absolute right-2 top-2.5 text-slate-400 hover:text-white p-1"
+                title="Copiar ID"
+              >
+                <i class="fa-regular fa-copy"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Primary Action Button -->
+          <button
+            id="primaryActionBtn"
+            onclick="handlePrimaryAction()"
+            class="w-full py-3.5 rounded-xl font-extrabold text-xs tracking-wider uppercase transition flex items-center justify-center gap-2 bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-lg shadow-amber-500/20"
+          >
+            <i class="fa-solid fa-play"></i>
+            <span id="primaryActionText">INICIAR TRANSMISSÃO MATRIZ</span>
+          </button>
+        </div>
+
+        <!-- Connected Praças List (Visible on MATRIZ Role) -->
+        <div
+          id="pracasPanel"
+          class="radio-panel rounded-2xl p-5 flex flex-col gap-3"
+        >
+          <div
+            class="flex items-center justify-between border-b border-slate-700/60 pb-3"
+          >
+            <h2
+              class="text-sm font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2"
+            >
+              <i class="fa-solid fa-users text-amber-400"></i> Praças Conectadas
+            </h2>
+            <span
+              id="connectedCountBadge"
+              class="text-xs bg-slate-950 text-emerald-400 font-mono px-2 py-0.5 rounded-full border border-slate-800"
+              >0 Ativas</span
+            >
+          </div>
+
+          <div
+            id="connectedPracasList"
+            class="space-y-2 max-h-48 overflow-y-auto pr-1"
+          >
+            <div class="text-xs text-slate-500 italic text-center py-4">
+              Nenhuma praça conectada no momento. Aguardando afiliadas...
+            </div>
+          </div>
+        </div>
+
+        <!-- Signal Alignment Test Tone Generator -->
+        <div class="radio-panel rounded-2xl p-5 flex flex-col gap-3">
+          <h2
+            class="text-sm font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2"
+          >
+            <i class="fa-solid fa-wave-square text-amber-400"></i> Tom de Teste
+            de Alinhamento (1 kHz)
+          </h2>
+          <p class="text-xs text-slate-400">
+            Utilize o sinal senoidal para calibrar o nível nominal de entrada da
+            mesa de som antes da transmissão.
+          </p>
+          <div class="grid grid-cols-2 gap-2 mt-1">
+            <button
+              id="tone0dBBtn"
+              onclick="toggleTestTone(1000, 0)"
+              class="radio-button py-2 rounded-xl text-xs font-mono font-bold text-slate-300 hover:text-amber-400"
+            >
+              1kHz (0 dBFS)
+            </button>
+            <button
+              id="tone18dBBtn"
+              onclick="toggleTestTone(1000, -18)"
+              class="radio-button py-2 rounded-xl text-xs font-mono font-bold text-slate-300 hover:text-amber-400"
+            >
+              1kHz (-18 dBFS)
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT COLUMN: Console Controls & Audio Engineering (8 Cols) -->
+      <section class="lg:col-span-8 flex flex-col gap-6">
+        <!-- Hardware Audio Configuration -->
+        <div class="radio-panel rounded-2xl p-5 space-y-4">
+          <div
+            class="flex items-center justify-between border-b border-slate-700/60 pb-3"
+          >
+            <h2
+              class="text-sm font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2"
+            >
+              <i class="fa-solid fa-sliders text-amber-400"></i> Dispositivos &
+              Qualidade de Áudio
+            </h2>
+            <span
+              class="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 px-2 py-0.5 rounded"
+              >DIRECT Opus 48kHz</span
+            >
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Input Audio Select (Matriz Mode) -->
+            <div id="inputDeviceContainer">
+              <label class="block text-xs font-semibold text-slate-400 mb-1.5">
+                <i class="fa-solid fa-microphone text-slate-400 mr-1"></i>
+                Entrada de Áudio (Microfone / Mesa)
+              </label>
+              <select
+                id="audioInputSelect"
+                onchange="changeAudioInput()"
+                class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+              >
+                <option value="">A carregar dispositivos...</option>
+              </select>
+            </div>
+
+            <!-- Output Audio Select (Praça Mode) -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1.5">
+                <i class="fa-solid fa-headphones text-slate-400 mr-1"></i> Saída
+                de Monitor / Cabo Virtual
+              </label>
+              <select
+                id="audioOutputSelect"
+                onchange="changeAudioOutput()"
+                class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-xl p-2.5 outline-none focus:border-amber-500 font-mono"
+              >
+                <option value="">Saída Padrão do Sistema</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- DSP Processing Toggles -->
+          <div class="pt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <label
+              class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 cursor-pointer text-xs text-slate-300"
+            >
+              <span>Cancelamento de Eco</span>
+              <input
+                type="checkbox"
+                id="echoCancellationToggle"
+                onchange="restartAudioStream()"
+                class="accent-amber-500 rounded"
+              />
+            </label>
+            <label
+              class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 cursor-pointer text-xs text-slate-300"
+            >
+              <span>Supressão de Ruído</span>
+              <input
+                type="checkbox"
+                id="noiseSuppressionToggle"
+                onchange="restartAudioStream()"
+                class="accent-amber-500 rounded"
+              />
+            </label>
+            <label
+              class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 cursor-pointer text-xs text-slate-300"
+            >
+              <span>Controlo Auto de Ganho</span>
+              <input
+                type="checkbox"
+                id="autoGainToggle"
+                onchange="restartAudioStream()"
+                class="accent-amber-500 rounded"
+              />
+            </label>
+          </div>
+        </div>
+
+        <!-- Peak Stereo VU Meters & Fader Control -->
+        <div
+          class="radio-panel rounded-2xl p-6 flex flex-col md:flex-row items-center gap-8 justify-between"
+        >
+          <!-- Dual LED Meters -->
+          <div class="w-full md:w-2/3 flex flex-col gap-4">
+            <div
+              class="flex items-center justify-between text-xs font-mono font-bold text-slate-400"
+            >
+              <span>VU METER STEREO (PPM LOGARÍTMICO)</span>
+              <span id="peakDbReadout" class="text-amber-400 text-sm"
+                >-INF dB</span
+              >
+            </div>
+
+            <div
+              class="bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-inner space-y-3"
+            >
+              <!-- Left Channel -->
+              <div class="space-y-1">
+                <div
+                  class="flex justify-between text-[10px] font-mono text-slate-500"
+                >
+                  <span>CANAL L</span>
+                  <span id="valDbL">-60 dB</span>
+                </div>
+                <div
+                  class="relative w-full h-5 bg-slate-900 rounded-md overflow-hidden border border-slate-800 flex items-center p-0.5"
+                >
+                  <div
+                    id="vuBarLeft"
+                    class="h-full rounded-sm bg-gradient-to-r from-emerald-500 via-amber-400 to-red-600 transition-all duration-75"
+                    style="width: 0%"
+                  ></div>
+                  <div
+                    id="peakHoldL"
+                    class="absolute top-0 bottom-0 w-1 bg-white opacity-80"
+                    style="left: 0%"
+                  ></div>
+                </div>
+              </div>
+
+              <!-- Right Channel -->
+              <div class="space-y-1">
+                <div
+                  class="flex justify-between text-[10px] font-mono text-slate-500"
+                >
+                  <span>CANAL R</span>
+                  <span id="valDbR">-60 dB</span>
+                </div>
+                <div
+                  class="relative w-full h-5 bg-slate-900 rounded-md overflow-hidden border border-slate-800 flex items-center p-0.5"
+                >
+                  <div
+                    id="vuBarRight"
+                    class="h-full rounded-sm bg-gradient-to-r from-emerald-500 via-amber-400 to-red-600 transition-all duration-75"
+                    style="width: 0%"
+                  ></div>
+                  <div
+                    id="peakHoldR"
+                    class="absolute top-0 bottom-0 w-1 bg-white opacity-80"
+                    style="left: 0%"
+                  ></div>
+                </div>
+              </div>
+
+              <!-- Scale Scale -->
+              <div
+                class="flex justify-between text-[9px] font-mono text-slate-600 px-1 pt-1"
+              >
+                <span>-60</span>
+                <span>-40</span>
+                <span>-20</span>
+                <span>-12</span>
+                <span>-6</span>
+                <span class="text-amber-500 font-bold">0 dB</span>
+                <span class="text-red-500 font-bold">+6 dB</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Master Volume Fader -->
+          <div
+            class="w-full md:w-1/3 flex flex-col items-center justify-center gap-4 bg-slate-950/50 p-4 rounded-2xl border border-slate-800/80"
+          >
+            <div class="flex items-center gap-4">
+              <input
+                type="range"
+                id="masterFader"
+                min="0"
+                max="150"
+                value="100"
+                oninput="updateMasterGain(this.value)"
+                class="fader-vertical accent-amber-500 cursor-pointer"
+              />
+              <div class="flex flex-col justify-between h-36 text-xs font-mono">
+                <div class="text-amber-400 font-bold">+5 dB</div>
+                <div class="text-slate-400 font-bold">0 dB</div>
+                <div class="text-slate-500">-10 dB</div>
+                <div class="text-slate-600">-30 dB</div>
+                <div class="text-slate-700">-INF</div>
+              </div>
+            </div>
+
+            <button
+              id="muteBtn"
+              onclick="toggleMute()"
+              class="w-full py-2 radio-button rounded-xl text-xs font-bold text-slate-300 flex items-center justify-center gap-1.5 hover:text-white"
+            >
+              <i class="fa-solid fa-microphone-slash"></i> MUTE GERAL
+            </button>
+          </div>
+        </div>
+
+        <!-- Console Log Output -->
+        <div class="radio-panel rounded-2xl p-4 flex flex-col gap-2">
+          <div
+            class="flex items-center justify-between text-xs font-mono border-b border-slate-800 pb-2"
+          >
+            <span class="text-slate-400 font-bold flex items-center gap-2">
+              <i class="fa-solid fa-terminal text-amber-400"></i> LOG DE CONEXÃO
+              E EVENTOS
+            </span>
+            <button
+              onclick="clearConsoleLog()"
+              class="text-slate-500 hover:text-slate-300 text-[10px] uppercase"
+            >
+              Limpar
+            </button>
+          </div>
+          <div
+            id="consoleLog"
+            class="bg-slate-950 p-3 rounded-xl border border-slate-900 font-mono text-[11px] h-28 overflow-y-auto space-y-1 text-slate-400"
+          >
+            <div class="text-slate-500">
+              [00:00:00] VOXCODEC inicializado. Escolha o modo (Matriz ou Praça)
+              e clique para iniciar.
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Hidden Remote Audio Element -->
+    <audio id="remoteAudioPlayer" autoplay class="hidden"></audio>
+
+    <script>
+      // =========================================================================
+      // VOXCODEC - Broadcast Core Logic
+      // =========================================================================
+
+      let currentRole = "MATRIZ"; // 'MATRIZ' or 'PRACA'
+      let peer = null;
+      let activeCalls = []; // Array of active calls on MATRIZ
+      let activeCall = null; // Active call reference on PRACA
+      let localStream = null;
+
+      // Audio Context & Meter Nodes
+      let audioCtx = null;
+      let sourceNode = null;
+      let gainNode = null;
+      let splitterNode = null;
+      let analyserL = null;
+      let analyserR = null;
+      let testToneOscillator = null;
+
+      // Peak Hold Variables
+      let peakL = 0;
+      let peakR = 0;
+      let isMuted = false;
+
+      window.addEventListener("DOMContentLoaded", () => {
+        initClock();
+        enumerateAudioDevices();
+        logConsole("Sistema VOXCODEC pronto.");
+
+        if (navigator.mediaDevices) {
+          navigator.mediaDevices.ondevicechange = () => {
+            enumerateAudioDevices();
+            logConsole("Dispositivos de áudio alterados na máquina.");
+          };
+        }
+      });
+
+      function initClock() {
+        setInterval(() => {
+          const now = new Date();
+          document.getElementById("utcClock").innerText =
+            now.toISOString().substring(11, 19) + " UTC";
+        }, 1000);
+      }
+
+      function logConsole(message, type = "info") {
+        const timeStr = new Date().toLocaleTimeString();
+        const entry = document.createElement("div");
+
+        if (type === "error") entry.className = "text-red-400 font-semibold";
+        else if (type === "success")
+          entry.className = "text-emerald-400 font-semibold";
+        else if (type === "warn") entry.className = "text-amber-400";
+        else entry.className = "text-slate-400";
+
+        entry.innerText = `[${timeStr}] ${message}`;
+        const consoleEl = document.getElementById("consoleLog");
+        consoleEl.appendChild(entry);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      }
+
+      function clearConsoleLog() {
+        document.getElementById("consoleLog").innerHTML =
+          '<div class="text-slate-500">[00:00:00] Log limpo.</div>';
+      }
+
+      function switchRole(role) {
+        currentRole = role;
+        const matrizBtn = document.getElementById("roleMatrizBtn");
+        const pracaBtn = document.getElementById("rolePracaBtn");
+        const descText = document.getElementById("roleDescriptionText");
+        const primaryBtnText = document.getElementById("primaryActionText");
+        const pracasPanel = document.getElementById("pracasPanel");
+        const inputContainer = document.getElementById("inputDeviceContainer");
+
+        if (role === "MATRIZ") {
+          matrizBtn.className =
+            "px-5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-amber-500 text-slate-950 shadow";
+          pracaBtn.className =
+            "px-5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 text-slate-400 hover:text-white";
+          descText.innerHTML =
+            'Crie um identificador único para o seu estúdio (ex: <span class="text-amber-400 font-mono">RADIO-MATRIZ-SP</span>). As praças irão utilizar este mesmo código para conectar-se automaticamente.';
+          primaryBtnText.innerText = "INICIAR TRANSMISSÃO MATRIZ";
+          pracasPanel.classList.remove("hidden");
+          inputContainer.classList.remove("opacity-50", "pointer-events-none");
+          logConsole("Modo alterado para MATRIZ (Estúdio Gerador).");
+        } else {
+          pracaBtn.className =
+            "px-5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-amber-500 text-slate-950 shadow";
+          matrizBtn.className =
+            "px-5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 text-slate-400 hover:text-white";
+          descText.innerHTML =
+            'Introduza o ID da Rádio Matriz a que pretende conectar-se e clique em "CONECTAR À MATRIZ".';
+          primaryBtnText.innerText = "CONECTAR À MATRIZ";
+          pracasPanel.classList.add("hidden");
+          inputContainer.classList.add("opacity-50", "pointer-events-none");
+          logConsole("Modo alterado para PRAÇA (Receptor Afiliado).");
+        }
+
+        if (peer) {
+          peer.destroy();
+          peer = null;
+          updateStatusUI("DESCONECTADO", "red");
+        }
+      }
+
+      function copyStationId() {
+        const input = document.getElementById("stationIdInput");
+        input.select();
+        document.execCommand("copy");
+        logConsole("ID da Rádio copiado para a área de transferência.");
+      }
+
+      async function enumerateAudioDevices() {
+        try {
+          if (!navigator.mediaDevices) {
+            logConsole(
+              "Atenção: Acesse via HTTPS ou ative a flag de origem segura no Chrome para liberar o áudio na rede local.",
+              "warn",
+            );
+            return;
+          }
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const inputSelect = document.getElementById("audioInputSelect");
+          const outputSelect = document.getElementById("audioOutputSelect");
+
+          inputSelect.innerHTML = "";
+          outputSelect.innerHTML =
+            '<option value="">Saída Padrão do Sistema</option>';
+
+          devices.forEach((device) => {
+            const option = document.createElement("option");
+            option.value = device.deviceId;
+
+            if (device.kind === "audioinput") {
+              option.text =
+                device.label || `Entrada de Som ${inputSelect.length + 1}`;
+              inputSelect.appendChild(option);
+            } else if (device.kind === "audiooutput") {
+              option.text =
+                device.label || `Saída de Som ${outputSelect.length}`;
+              outputSelect.appendChild(option);
+            }
+          });
+
+          if (inputSelect.options.length > 0) {
+            initAudioStream(inputSelect.value);
+          }
+        } catch (err) {
+          logConsole("Erro ao listar dispositivos: " + err.message, "error");
+        }
+      }
+
+      async function initAudioStream(deviceId) {
+        try {
+          if (!navigator.mediaDevices) return;
+
+          if (localStream) {
+            localStream.getTracks().forEach((track) => track.stop());
+          }
+
+          const constraints = {
+            audio: {
+              deviceId: deviceId ? { exact: deviceId } : undefined,
+              channelCount: 2,
+              sampleRate: 48000,
+              echoCancellation: document.getElementById(
+                "echoCancellationToggle",
+              ).checked,
+              noiseSuppression: document.getElementById(
+                "noiseSuppressionToggle",
+              ).checked,
+              autoGainControl:
+                document.getElementById("autoGainToggle").checked,
+            },
+          };
+
+          localStream = await navigator.mediaDevices.getUserMedia(constraints);
+          setupWebAudioEngine(localStream);
+          logConsole("Fluxo de áudio local ativo (48kHz Estéreo).", "success");
+        } catch (err) {
+          logConsole(
+            "Erro ao aceder ao microfone/mesa: " + err.message,
+            "error",
+          );
+        }
+      }
+
+      function changeAudioInput() {
+        initAudioStream(document.getElementById("audioInputSelect").value);
+      }
+
+      function changeAudioOutput() {
+        const outputId = document.getElementById("audioOutputSelect").value;
+        const remoteAudio = document.getElementById("remoteAudioPlayer");
+        if (typeof remoteAudio.setSinkId === "function" && outputId) {
+          remoteAudio
+            .setSinkId(outputId)
+            .then(() => logConsole("Saída de áudio alterada."))
+            .catch((e) =>
+              logConsole("Erro ao mudar saída: " + e.message, "error"),
+            );
+        }
+      }
+
+      function restartAudioStream() {
+        initAudioStream(document.getElementById("audioInputSelect").value);
+      }
+
+      function setupWebAudioEngine(stream) {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: 48000,
+          });
+        }
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+
+        sourceNode = audioCtx.createMediaStreamSource(stream);
+        gainNode = audioCtx.createGain();
+        gainNode.gain.value =
+          document.getElementById("masterFader").value / 100;
+
+        splitterNode = audioCtx.createChannelSplitter(2);
+        analyserL = audioCtx.createAnalyser();
+        analyserR = audioCtx.createAnalyser();
+
+        analyserL.fftSize = 512;
+        analyserR.fftSize = 512;
+
+        sourceNode.connect(gainNode);
+        gainNode.connect(splitterNode);
+
+        splitterNode.connect(analyserL, 0);
+        splitterNode.connect(analyserR, 1 % splitterNode.numberOfOutputs);
+
+        requestAnimationFrame(drawVuMeters);
+      }
+
+      function drawVuMeters() {
+        if (!analyserL || !analyserR) return;
+
+        const bufferL = new Float32Array(analyserL.fftSize);
+        const bufferR = new Float32Array(analyserR.fftSize);
+
+        analyserL.getFloatTimeDomainData(bufferL);
+        analyserR.getFloatTimeDomainData(bufferR);
+
+        const rmsL = calculateRMS(bufferL);
+        const rmsR = calculateRMS(bufferR);
+
+        const dbL = rmsL > 0 ? 20 * Math.log10(rmsL) : -60;
+        const dbR = rmsR > 0 ? 20 * Math.log10(rmsR) : -60;
+
+        const pctL = Math.max(0, Math.min(100, ((dbL + 60) / 66) * 100));
+        const pctR = Math.max(0, Math.min(100, ((dbR + 60) / 66) * 100));
+
+        if (pctL > peakL) peakL = pctL;
+        else peakL = Math.max(0, peakL - 1.5);
+        if (pctR > peakR) peakR = pctR;
+        else peakR = Math.max(0, peakR - 1.5);
+
+        document.getElementById("vuBarLeft").style.width = pctL + "%";
+        document.getElementById("vuBarRight").style.width = pctR + "%";
+        document.getElementById("peakHoldL").style.left = peakL + "%";
+        document.getElementById("peakHoldR").style.left = peakR + "%";
+
+        document.getElementById("valDbL").innerText =
+          (dbL <= -59 ? "-INF" : dbL.toFixed(1)) + " dB";
+        document.getElementById("valDbR").innerText =
+          (dbR <= -59 ? "-INF" : dbR.toFixed(1)) + " dB";
+
+        const maxDb = Math.max(dbL, dbR);
+        document.getElementById("peakDbReadout").innerText =
+          maxDb <= -59 ? "-INF dB" : maxDb.toFixed(1) + " dB";
+
+        requestAnimationFrame(drawVuMeters);
+      }
+
+      function calculateRMS(buffer) {
+        let sum = 0;
+        for (let i = 0; i < buffer.length; i++) {
+          sum += buffer[i] * buffer[i];
+        }
+        return Math.sqrt(sum / buffer.length);
+      }
+
+      function updateMasterGain(val) {
+        if (gainNode) gainNode.gain.value = val / 100;
+      }
+
+      function toggleMute() {
+        isMuted = !isMuted;
+        if (localStream) {
+          localStream
+            .getAudioTracks()
+            .forEach((track) => (track.enabled = !isMuted));
+        }
+        document.getElementById("muteBtn").className = isMuted
+          ? "w-full py-2 radio-button rounded-xl text-xs font-bold text-red-400 border-red-500/50 flex items-center justify-center gap-1.5"
+          : "w-full py-2 radio-button rounded-xl text-xs font-bold text-slate-300 flex items-center justify-center gap-1.5 hover:text-white";
+        logConsole(isMuted ? "Mute ativado." : "Mute desativado.");
+      }
+
+      function toggleTestTone(freq, dbLevel) {
+        if (testToneOscillator) {
+          testToneOscillator.stop();
+          testToneOscillator.disconnect();
+          testToneOscillator = null;
+          logConsole("Tom de teste desativado.");
+          return;
+        }
+
+        if (!audioCtx)
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        testToneOscillator = audioCtx.createOscillator();
+        const toneGain = audioCtx.createGain();
+
+        testToneOscillator.type = "sine";
+        testToneOscillator.frequency.value = freq;
+        toneGain.gain.value = Math.pow(10, dbLevel / 20);
+
+        testToneOscillator.connect(toneGain);
+        toneGain.connect(gainNode);
+
+        testToneOscillator.start();
+        logConsole(
+          `Tom de alinhamento ${freq}Hz (${dbLevel}dBFS) ativo.`,
+          "warn",
+        );
+      }
+
+      function handlePrimaryAction() {
+        if (audioCtx && audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+
+        const stationId = document
+          .getElementById("stationIdInput")
+          .value.trim()
+          .toUpperCase();
+
+        if (!stationId) {
+          logConsole("Escreva um ID para a rádio!", "error");
+          return;
+        }
+
+        if (currentRole === "MATRIZ") {
+          startMatrizBroadcaster(stationId);
+        } else {
+          connectPracaToMatriz(stationId);
+        }
+      }
+
+      function createSilentStream() {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = ctx.createOscillator();
+        const dst = oscillator.connect(ctx.createMediaStreamDestination());
+        oscillator.start();
+        const track = dst.stream.getAudioTracks()[0];
+        track.enabled = false;
+        return dst.stream;
+      }
+
+      function startMatrizBroadcaster(stationId) {
+        if (peer) {
+          peer.destroy();
+          peer = null;
+          updateStatusUI("DESCONECTADO", "red");
+          logConsole("Transmissão da Matriz encerrada.");
+          return;
+        }
+
+        logConsole(
+          `Iniciando servidor de transmissão para o ID: ${stationId}...`,
+        );
+
+        peer = new Peer(stationId, {
+          debug: 1,
+          config: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:stun1.l.google.com:19302" },
+              { urls: "stun:stun2.l.google.com:19302" },
+              {
+                urls: "turn:openrelay.metered.ca:80",
+                username: "openrelay",
+                credential: "openrelay",
+              },
+              {
+                urls: "turn:openrelay.metered.ca:443",
+                username: "openrelay",
+                credential: "openrelay",
+              },
+              {
+                urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                username: "openrelay",
+                credential: "openrelay",
+              },
+            ],
+          },
+        });
+
+        peer.on("open", (id) => {
+          updateStatusUI("MATRIZ NO AR", "green");
+          document.getElementById("peerBadge").innerText = "MATRIZ ATIVA";
+          logConsole(`EMISSÃO MATRIZ NO AR! ID: ${id}`, "success");
+        });
+
+        peer.on("call", (call) => {
+          logConsole(`Nova Praça conectando-se: ${call.peer}...`, "warn");
+
+          const streamToSend = localStream || createSilentStream();
+          call.answer(streamToSend);
+
+          activeCalls.push(call);
+          updateConnectedPracasUI();
+
+          call.on("close", () => {
+            activeCalls = activeCalls.filter((c) => c !== call);
+            updateConnectedPracasUI();
+            logConsole(`Praça desconectada: ${call.peer}`);
+          });
+        });
+
+        peer.on("error", (err) => {
+          logConsole("Erro no servidor da Matriz: " + err.type, "error");
+          if (err.type === "unavailable-id") {
+            logConsole(
+              "Atenção: Este ID já está em uso por outro estúdio!",
+              "error",
+            );
+          }
+        });
+      }
+
+      function connectPracaToMatriz(matrizStationId) {
+        if (peer) {
+          peer.destroy();
+          peer = null;
+          updateStatusUI("DESCONECTADO", "red");
+          logConsole("Conexão encerrada.");
+          return;
+        }
+
+        logConsole(`Conectando à Rádio Matriz [${matrizStationId}]...`);
+
+        peer = new Peer({
+          debug: 1,
+          config: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:stun1.l.google.com:19302" },
+              { urls: "stun:stun2.l.google.com:19302" },
+              {
+                urls: "turn:openrelay.metered.ca:80",
+                username: "openrelay",
+                credential: "openrelay",
+              },
+              {
+                urls: "turn:openrelay.metered.ca:443",
+                username: "openrelay",
+                credential: "openrelay",
+              },
+              {
+                urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                username: "openrelay",
+                credential: "openrelay",
+              },
+            ],
+          },
+        });
+
+        peer.on("open", (myId) => {
+          logConsole(`Identificador local gerado. Ligando à Matriz...`);
+
+          const dummyStream = createSilentStream();
+          const call = peer.call(matrizStationId, dummyStream);
+          activeCall = call;
+
+          call.on("stream", (remoteStream) => {
+            const remoteAudio = document.getElementById("remoteAudioPlayer");
+            remoteAudio.srcObject = remoteStream;
+            remoteAudio.play().catch(() => {});
+
+            setupWebAudioEngine(remoteStream);
+
+            updateStatusUI("RECEPTOR CONECTADO", "green");
+            document.getElementById("peerBadge").innerText = "RECEBENDO ÁUDIO";
+            logConsole("SINAL DA MATRIZ RECEBIDO COM SUCESSO!", "success");
+          });
+
+          call.on("close", () => {
+            updateStatusUI("SINAL PERDIDO", "red");
+            logConsole("A Matriz encerrou a transmissão.", "warn");
+          });
+        });
+
+        peer.on("error", (err) => {
+          logConsole("Falha ao ligar à Matriz: " + err.type, "error");
+          updateStatusUI("ERRO DE CONEXÃO", "red");
+        });
+      }
+
+      function updateStatusUI(text, color) {
+        const led = document.getElementById("globalLed");
+        const statusText = document.getElementById("globalStatusText");
+        const primaryBtn = document.getElementById("primaryActionBtn");
+
+        statusText.innerText = text;
+
+        if (color === "green") {
+          led.className = "led-indicator led-green";
+          primaryBtn.className =
+            "w-full py-3.5 rounded-xl font-extrabold text-xs tracking-wider uppercase transition flex items-center justify-center gap-2 btn-live-on shadow-lg";
+        } else if (color === "yellow") {
+          led.className = "led-indicator led-yellow";
+        } else {
+          led.className = "led-indicator led-red";
+          primaryBtn.className =
+            "w-full py-3.5 rounded-xl font-extrabold text-xs tracking-wider uppercase transition flex items-center justify-center gap-2 bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-lg shadow-amber-500/20";
+        }
+      }
+
+      function updateConnectedPracasUI() {
+        const container = document.getElementById("connectedPracasList");
+        const countBadge = document.getElementById("connectedCountBadge");
+
+        countBadge.innerText = `${activeCalls.length} Ativas`;
+
+        if (activeCalls.length === 0) {
+          container.innerHTML =
+            '<div class="text-xs text-slate-500 italic text-center py-4">Nenhuma praça conectada no momento. Aguardando afiliadas...</div>';
+          return;
+        }
+
+        container.innerHTML = "";
+        activeCalls.forEach((call, index) => {
+          const item = document.createElement("div");
+          item.className =
+            "p-2.5 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between text-xs";
+          item.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="led-indicator led-green"></span>
+                        <span class="font-mono text-slate-200 font-bold">PRAÇA #${index + 1} (${call.peer.substring(0, 8)}...)</span>
+                    </div>
+                    <span class="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800 font-mono">EM DIRETO</span>
+                `;
+          container.appendChild(item);
+        });
+      }
+    </script>
+  </body>
+</html>
