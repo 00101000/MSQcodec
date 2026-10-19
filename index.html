@@ -599,7 +599,7 @@
       </section>
     </main>
 
-    <!-- Hidden Remote Audio Element com suporte a iOS -->
+    <!-- Hidden Remote Audio Element -->
     <audio id="remoteAudioPlayer" autoplay playsinline class="hidden"></audio>
 
     <script>
@@ -613,7 +613,6 @@
       let activeCall = null; // Referência da chamada ativa na PRAÇA
       let localStream = null;
       let bufferMonitorInterval = null; // Timer para monitorar o delay da praça
-      let reconnectInterval = null; // Timer para auto-reconectar no celular
 
       // Audio Context & Meter Nodes
       let audioCtx = null;
@@ -739,11 +738,6 @@
         if (bufferMonitorInterval) {
           clearInterval(bufferMonitorInterval);
           bufferMonitorInterval = null;
-        }
-
-        if (reconnectInterval) {
-          clearInterval(reconnectInterval);
-          reconnectInterval = null;
         }
 
         if (peer) {
@@ -1195,15 +1189,21 @@
         });
       }
 
+      function disconnectPraca(peerId) {
+        const callToDisconnect = activeCalls.find((c) => c.peer === peerId);
+        if (callToDisconnect) {
+          callToDisconnect.close();
+          activeCalls = activeCalls.filter((c) => c.peer !== peerId);
+          updateConnectedPracasUI();
+          logConsole(`Praça ${peerId} foi removida da transmissão.`, "warn");
+        }
+      }
+
       function connectPracaToMatriz(matrizStationId) {
         if (peer) {
           if (bufferMonitorInterval) {
             clearInterval(bufferMonitorInterval);
             bufferMonitorInterval = null;
-          }
-          if (reconnectInterval) {
-            clearInterval(reconnectInterval);
-            reconnectInterval = null;
           }
           peer.destroy();
           peer = null;
@@ -1250,14 +1250,7 @@
           call.on("stream", (remoteStream) => {
             const remoteAudio = document.getElementById("remoteAudioPlayer");
             remoteAudio.srcObject = remoteStream;
-            
-            // Força execução no iOS
-            const playPromise = remoteAudio.play();
-            if (playPromise !== undefined) {
-              playPromise.catch(() => {
-                logConsole("Toque na tela para liberar o som no celular.", "warn");
-              });
-            }
+            remoteAudio.play().catch(() => {});
 
             if (bufferMonitorInterval) clearInterval(bufferMonitorInterval);
             bufferMonitorInterval = setInterval(() => {
@@ -1286,16 +1279,7 @@
               bufferMonitorInterval = null;
             }
             updateStatusUI("SINAL PERDIDO", "red");
-            logConsole("A Matriz encerrou a transmissão ou conexão caiu. Tentando reconectar...", "warn");
-            
-            // Tenta auto-reconectar automaticamente a cada 3 segundos
-            if (!reconnectInterval) {
-              reconnectInterval = setInterval(() => {
-                if (currentRole === "PRACA" && (!peer || peer.destroyed)) {
-                  connectPracaToMatriz(matrizStationId);
-                }
-              }, 3000);
-            }
+            logConsole("A Matriz encerrou a transmissão.", "warn");
           });
         });
 
@@ -1347,7 +1331,12 @@
                         <span class="led-indicator led-green"></span>
                         <span class="font-mono text-slate-200 font-bold">PRAÇA #${index + 1} (${call.peer.substring(0, 8)}...)</span>
                     </div>
-                    <span class="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800 font-mono">AO VIVO</span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800 font-mono">AO VIVO</span>
+                        <button onclick="disconnectPraca('${call.peer}')" class="text-xs bg-red-950/80 hover:bg-red-900 text-red-400 border border-red-800/80 px-2 py-0.5 rounded transition flex items-center gap-1" title="Desconectar Praça">
+                            <i class="fa-solid fa-trash-can text-[10px]"></i>
+                        </button>
+                    </div>
                 `;
           container.appendChild(item);
         });
