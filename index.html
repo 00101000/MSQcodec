@@ -591,8 +591,8 @@
             class="bg-slate-950 p-3 rounded-xl border border-slate-900 font-mono text-[11px] h-28 overflow-y-auto space-y-1 text-slate-400"
           >
             <div class="text-slate-500">
-              [00:00:00] MSQ CODEC inicializado. Escolha o modo (Matriz ou Praça)
-              e clique para iniciar.
+              [00:00:00] MSQ CODEC inicializado. Escolha o modo (Matriz ou
+              Praça) e clique para iniciar.
             </div>
           </div>
         </div>
@@ -1082,9 +1082,18 @@
       }
 
       function handlePrimaryAction() {
-        if (audioCtx && audioCtx.state === "suspended") {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: 48000,
+          });
+        }
+        if (audioCtx.state === "suspended") {
           audioCtx.resume();
         }
+
+        // Destrava o áudio no gesto de toque do usuário (crucial para mobile)
+        const remoteAudio = document.getElementById("remoteAudioPlayer");
+        remoteAudio.play().catch(() => {});
 
         const stationId = document
           .getElementById("stationIdInput")
@@ -1250,8 +1259,21 @@
           call.on("stream", (remoteStream) => {
             const remoteAudio = document.getElementById("remoteAudioPlayer");
             remoteAudio.srcObject = remoteStream;
-            remoteAudio.play().catch(() => {});
 
+            // Tratamento de reprodução com fallback interativo para mobile
+            remoteAudio.play().catch(() => {
+              const unlock = () => {
+                remoteAudio.play();
+                if (audioCtx && audioCtx.state === "suspended")
+                  audioCtx.resume();
+                window.removeEventListener("click", unlock);
+                window.removeEventListener("touchstart", unlock);
+              };
+              window.addEventListener("click", unlock);
+              window.addEventListener("touchstart", unlock);
+            });
+
+            // MONITOR DE LATÊNCIA SUAVIZADO PARA MOBILE (Evita crash do decoder Opus)
             if (bufferMonitorInterval) clearInterval(bufferMonitorInterval);
             bufferMonitorInterval = setInterval(() => {
               if (remoteAudio.buffered.length > 0) {
@@ -1260,11 +1282,12 @@
                 );
                 const delay = bufferedEnd - remoteAudio.currentTime;
 
-                if (delay > 0.25) {
-                  remoteAudio.currentTime = bufferedEnd - 0.05;
+                // Margem aumentada para 1.2s e checagem a cada 5s para estabilidade no Android/iOS
+                if (delay > 1.2) {
+                  remoteAudio.currentTime = bufferedEnd - 0.1;
                 }
               }
-            }, 2000);
+            }, 5000);
 
             setupWebAudioEngine(remoteStream);
 
