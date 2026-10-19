@@ -599,8 +599,8 @@
       </section>
     </main>
 
-    <!-- Hidden Remote Audio Element -->
-    <audio id="remoteAudioPlayer" autoplay class="hidden"></audio>
+    <!-- Hidden Remote Audio Element com suporte a iOS -->
+    <audio id="remoteAudioPlayer" autoplay playsinline class="hidden"></audio>
 
     <script>
       // =========================================================================
@@ -613,6 +613,7 @@
       let activeCall = null; // Referência da chamada ativa na PRAÇA
       let localStream = null;
       let bufferMonitorInterval = null; // Timer para monitorar o delay da praça
+      let reconnectInterval = null; // Timer para auto-reconectar no celular
 
       // Audio Context & Meter Nodes
       let audioCtx = null;
@@ -738,6 +739,11 @@
         if (bufferMonitorInterval) {
           clearInterval(bufferMonitorInterval);
           bufferMonitorInterval = null;
+        }
+
+        if (reconnectInterval) {
+          clearInterval(reconnectInterval);
+          reconnectInterval = null;
         }
 
         if (peer) {
@@ -1195,6 +1201,10 @@
             clearInterval(bufferMonitorInterval);
             bufferMonitorInterval = null;
           }
+          if (reconnectInterval) {
+            clearInterval(reconnectInterval);
+            reconnectInterval = null;
+          }
           peer.destroy();
           peer = null;
           updateStatusUI("DESCONECTADO", "red");
@@ -1240,7 +1250,14 @@
           call.on("stream", (remoteStream) => {
             const remoteAudio = document.getElementById("remoteAudioPlayer");
             remoteAudio.srcObject = remoteStream;
-            remoteAudio.play().catch(() => {});
+            
+            // Força execução no iOS
+            const playPromise = remoteAudio.play();
+            if (playPromise !== undefined) {
+              playPromise.catch(() => {
+                logConsole("Toque na tela para liberar o som no celular.", "warn");
+              });
+            }
 
             if (bufferMonitorInterval) clearInterval(bufferMonitorInterval);
             bufferMonitorInterval = setInterval(() => {
@@ -1269,7 +1286,16 @@
               bufferMonitorInterval = null;
             }
             updateStatusUI("SINAL PERDIDO", "red");
-            logConsole("A Matriz encerrou a transmissão.", "warn");
+            logConsole("A Matriz encerrou a transmissão ou conexão caiu. Tentando reconectar...", "warn");
+            
+            // Tenta auto-reconectar automaticamente a cada 3 segundos
+            if (!reconnectInterval) {
+              reconnectInterval = setInterval(() => {
+                if (currentRole === "PRACA" && (!peer || peer.destroyed)) {
+                  connectPracaToMatriz(matrizStationId);
+                }
+              }, 3000);
+            }
           });
         });
 
