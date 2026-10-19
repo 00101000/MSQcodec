@@ -1117,12 +1117,28 @@
       }
 
       function createSilentStream() {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = ctx.createOscillator();
-        const dst = oscillator.connect(ctx.createMediaStreamDestination());
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: 48000,
+          });
+        }
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+
+        // Injeta um sinal real imperceptível (gain ultra baixo) para manter o RTP ativo no mobile
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.type = "sine";
+        oscillator.frequency.value = 1000;
+        gainNode.gain.value = 0.00001;
+
+        const dst = audioCtx.createMediaStreamDestination();
+        oscillator.connect(gainNode);
+        gainNode.connect(dst);
+
         oscillator.start();
-        const track = dst.stream.getAudioTracks()[0];
-        track.enabled = false;
         return dst.stream;
       }
 
