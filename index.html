@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VOXCODEC AoIP - Transmissor Matriz & Praças</title>
+    <title>MSQ CODEC AoIP - Transmissor Matriz & Praças</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts: Inter & JetBrains Mono -->
@@ -174,7 +174,7 @@
           <div>
             <div class="flex items-center gap-2">
               <h1 class="font-extrabold text-lg tracking-wider text-white">
-                VOXCODEC
+                MSQ CODEC
                 <span
                   class="text-amber-400 text-xs font-mono font-normal px-2 py-0.5 rounded bg-amber-400/10 border border-amber-400/20"
                   >AUTO-P2P v3.0</span
@@ -591,7 +591,7 @@
             class="bg-slate-950 p-3 rounded-xl border border-slate-900 font-mono text-[11px] h-28 overflow-y-auto space-y-1 text-slate-400"
           >
             <div class="text-slate-500">
-              [00:00:00] VOXCODEC inicializado. Escolha o modo (Matriz ou Praça)
+              [00:00:00] MSQ CODEC inicializado. Escolha o modo (Matriz ou Praça)
               e clique para iniciar.
             </div>
           </div>
@@ -604,7 +604,7 @@
 
     <script>
       // =========================================================================
-      // VOXCODEC - Broadcast Core Logic
+      // MSQ CODEC - Broadcast Core Logic
       // =========================================================================
 
       let currentRole = "MATRIZ"; // 'MATRIZ' or 'PRACA'
@@ -631,7 +631,7 @@
       window.addEventListener("DOMContentLoaded", () => {
         initClock();
         enumerateAudioDevices();
-        logConsole("Sistema VOXCODEC pronto.");
+        logConsole("Sistema MSQ CODEC pronto.");
 
         if (navigator.mediaDevices) {
           navigator.mediaDevices.ondevicechange = () => {
